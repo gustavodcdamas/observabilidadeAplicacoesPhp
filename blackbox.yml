@@ -1,0 +1,229 @@
+modules:
+  http_2xx:
+    prober: http
+    http:
+      preferred_ip_protocol: "ip4"
+
+  http_post_2xx:
+    prober: http
+    http:
+      method: POST
+
+  http_get_2xx:
+    prober: http
+    timeout: 10s
+    http:
+      method: GET
+      preferred_ip_protocol: ip4
+      headers:
+        Content-Type: application/json
+      valid_status_codes: [200,201,202,204]
+
+  http_2xx_no_redirects:
+    prober: http
+    timeout: 10s
+    http:
+      preferred_ip_protocol: ip4
+      no_follow_redirects: true
+      valid_status_codes: [200,201,202,204]
+
+  http_2xx_tls_strict:
+    prober: http
+    timeout: 10s
+    http:
+      preferred_ip_protocol: ip4
+      tls_config:
+        insecure_skip_verify: false
+      valid_status_codes: [200,201,202,204]
+
+  tcp_connect:
+    prober: tcp
+
+  pop10s_banner:
+    prober: tcp
+    tcp:
+      query_response:
+      - expect: "^+OK"
+      tls: true
+      tls_config:
+        insecure_skip_verify: false
+
+  grpc:
+    prober: grpc
+    grpc:
+      tls: true
+      preferred_ip_protocol: "ip4"
+
+  grpc_plain:
+    prober: grpc
+    grpc:
+      tls: false
+      service: "service1"
+
+  ssh_banner:
+    prober: tcp
+    tcp:
+      query_response:
+      - expect: "^SSH-2.0-"
+      - send: "SSH-2.0-blackbox-ssh-check"
+
+  graphql_post:
+    prober: http
+    timeout: 10s
+    http:
+      method: POST
+      preferred_ip_protocol: ip4
+      headers:
+        Content-Type: application/json
+      body: '{"query":"query { __typename }"}'
+      valid_status_codes: [200,201,202,204]
+
+  graphql_get:
+    prober: http
+    timeout: 10s
+    http:
+      method: GET
+      preferred_ip_protocol: ip4
+      headers:
+        Content-Type: application/json
+      valid_status_codes: [200,201,202,204]
+
+  http_post_json:
+    prober: http
+    timeout: 10s
+    http:
+      method: POST
+      preferred_ip_protocol: ip4
+      headers:
+        Content-Type: application/json
+      body: '{}'
+      valid_status_codes: [200,201,202,204]
+
+  http_get_json:
+    prober: http
+    timeout: 10s
+    http:
+      method: GET
+      preferred_ip_protocol: ip4
+      headers:
+        Content-Type: application/json
+      valid_status_codes: [200,201,202,204]
+
+  irc_banner:
+    prober: tcp
+    tcp:
+      query_response:
+      - send: "NICK prober"
+      - send: "USER prober prober prober :prober"
+      - expect: "PING :([^ ]+)"
+        send: "PONG ${1}"
+      - expect: "^:[^ ]+ 001"
+
+  icmp:
+    prober: icmp
+
+  icmp_ttl5:
+    prober: icmp
+    timeout: 10s
+    icmp:
+      ttl: 5
+
+  tcp_tls_connect:
+    prober: tcp
+    timeout: 10s
+    tcp:
+      tls: true
+      tls_config:
+        insecure_skip_verify: false
+
+  dns_udp:
+    prober: dns
+    timeout: 10s
+    dns:
+      query_name: "google.com"
+      query_type: A
+      valid_rcodes: [NOERROR, NXDOMAIN]
+      preferred_ip_protocol: ip4
+      transport_protocol: "udp"
+
+  dns_udp_topazevolution_com:
+    prober: dns
+    timeout: 10s
+    dns:
+      query_name: "topazevolution.com"
+      query_type: A
+      valid_rcodes: [NOERROR]
+      preferred_ip_protocol: ip4
+      transport_protocol: "udp"
+
+  dns_udp_google_com:
+    prober: dns
+    timeout: 10s
+    dns:
+      query_name: "google.com"
+      query_type: A
+      valid_rcodes: [NOERROR]
+      preferred_ip_protocol: ip4
+      transport_protocol: "udp"
+
+  dns_udp_pihole_pri:
+    prober: dns
+    timeout: 10s
+    dns:
+      query_name: "google.com"
+      query_type: A
+      valid_rcodes: [NOERROR, NXDOMAIN]
+      preferred_ip_protocol: ip4
+      transport_protocol: "udp"
+
+  dns_udp_pihole_sec:
+    prober: dns
+    timeout: 10s
+    dns:
+      query_name: "google.com"
+      query_type: A
+      valid_rcodes: [NOERROR, NXDOMAIN]
+      preferred_ip_protocol: ip4
+      transport_protocol: "udp"
+
+  soap_newcon_post:
+    prober: http
+    timeout: 60s
+    http:
+      method: POST
+      headers:
+        Content-Type: "text/xml; charset=utf-8"
+        SOAPAction: "http://tempuri.org/cnsParametrizacoesDefault"
+      body: |
+        <?xml version="1.0" encoding="utf-8"?>
+        <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+          <soap:Body>
+            <prcLogin xmlns="http://www.cnpm.com.br/">
+              <CD_Usuario></CD_Usuario>
+              <Senha></Senha>
+              <IpUsuario></IpUsuario>
+            </prcLogin>
+          </soap:Body>
+        </soap:Envelope>
+      valid_status_codes: [200,201,202,204,500]
+
+  soap_newcon_get:
+    prober: http
+    timeout: 60s
+    http:
+      method: GET
+      headers:
+        Content-Type: "text/xml; charset=utf-8"
+        SOAPAction: "http://tempuri.org/cnsParametrizacoesDefault"
+      body: |
+        <?xml version="1.0" encoding="utf-8"?>
+        <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+          <soap:Body>
+            <prcLogin xmlns="http://www.cnpm.com.br/">
+              <CD_Usuario></CD_Usuario>
+              <Senha></Senha>
+              <IpUsuario></IpUsuario>
+            </prcLogin>
+          </soap:Body>
+        </soap:Envelope>
+      valid_status_codes: [200,201,202,204,500]

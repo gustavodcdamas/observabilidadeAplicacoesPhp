@@ -1,0 +1,49 @@
+# promtail-config.yml
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: unifisa-api
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: unifisa-api
+          app: unifisa-api
+          __path__: /var/log/unifisa/*.log
+    
+    pipeline_stages:
+      # Parse JSON logs
+      - json:
+          expressions:
+            timestamp: timestamp
+            level: level
+            message: message
+            trace_id: trace_id
+            span_id: span_id
+            soap_op: soap_op
+            elapsed_ms_total: elapsed_ms_total
+            elapsed_ms_newcon: elapsed_ms_newcon
+            error_pattern: error_pattern
+      
+      # Extract timestamp
+      - timestamp:
+          source: timestamp
+          format: RFC3339Nano
+      
+      # Add labels
+      - labels:
+          level:
+          soap_op:
+          trace_id:
+      
+      # Output formatting
+      - output:
+          source: message

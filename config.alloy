@@ -1,0 +1,279 @@
+// ############################################
+// #### OBSERVABILIDADE UNIFISA - COMPLETA ####
+// ############################################
+
+// =====================================
+// 1. DISCOVERY DE CONTAINERS DOCKER
+// =====================================
+
+discovery.docker "linux" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// =====================================
+// 2. RELABEL PARA LOGS
+// =====================================
+
+discovery.relabel "logs_integrations_docker" {
+  targets = discovery.docker.linux.targets
+
+  // Nome do container
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.+)"
+    target_label  = "container_name"
+  }
+
+  // Service name (mesmo que container_name)
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.+)"
+    target_label  = "service_name"
+  }
+
+  // Imagem do container
+  rule {
+    source_labels = ["__meta_docker_container_image"]
+    target_label  = "image"
+  }
+
+  // Job padrão
+  rule {
+    target_label = "job"
+    replacement  = "docker"
+  }
+
+  // =====================================
+  // CLASSIFICAÇÃO POR APP
+  // =====================================
+
+  // AFV / Porto
+  rule {
+    source_labels = ["__meta_docker_container_image"]
+    regex         = ".*porto.*|.*afv.*"
+    target_label  = "app"
+    replacement   = "afv"
+  }
+
+  // NewCon genérico
+  rule {
+    source_labels = ["__meta_docker_container_image"]
+    regex         = ".*newcon.*"
+    target_label  = "app"
+    replacement   = "newcon"
+  }
+
+  // Unifisa (nossa API PHP)
+  rule {
+    source_labels = ["__meta_docker_container_image"]
+    regex         = ".*unifisa.*"
+    target_label  = "app"
+    replacement   = "unifisa-api"
+  }
+
+  // Nginx
+  rule {
+    source_labels = ["__meta_docker_container_image"]
+    regex         = ".*nginx.*"
+    target_label  = "app"
+    replacement   = "nginx"
+  }
+
+  // Bancos de dados
+  rule {
+    source_labels = ["__meta_docker_container_image"]
+    regex         = ".*postgres.*|.*mysql.*|.*mariadb.*"
+    target_label  = "app"
+    replacement   = "database"
+  }
+}
+
+// =====================================
+// 3. SOURCE DE LOGS DOCKER
+// =====================================
+
+loki.source.docker "default" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.logs_integrations_docker.output
+  labels     = {
+    "platform" = "docker",
+  }
+  forward_to = [loki.process.parse_json.receiver]
+}
+
+// =====================================
+// 4. PROCESSAMENTO DE LOGS JSON
+// =====================================
+
+loki.process "parse_json" {
+  forward_to = [loki.process.unifisa_specific.receiver]
+
+  // Tentar parsear como JSON
+  stage.json {
+    expressions = {
+      level            = "level",
+      message          = "message",
+      timestamp        = "timestamp",
+      context_message  = "context.message",
+    }
+  }
+
+  // Adicionar label de nível se existir
+  stage.labels {
+    values = {
+      level = "",
+    }
+  }
+}
+
+// =====================================
+// 5. PROCESSAMENTO ESPECÍFICO UNIFISA
+// =====================================
+
+loki.process "unifisa_specific" {
+  forward_to = [loki.write.local.receiver]
+
+  // Parse específico para logs da API Unifisa
+  stage.match {
+    selector = "{app=\"unifisa-api\"}"
+    
+    stage.json {
+      expressions = {
+        trace_id         = "extra.trace_id",
+        span_id          = "extra.span_id",
+        service          = "extra.service",
+        environment      = "extra.environment",
+        host             = "extra.host",
+        soap_op          = "context.soap_op",
+        elapsed_ms_total = "context.elapsed_ms_total",
+        success          = "context.success",
+        error_code       = "context.error_code",
+        method           = "context.method",
+        path             = "context.path",
+        status           = "context.status",
+      }
+    }
+
+    // Adicionar labels importantes
+    stage.labels {
+      values = {
+        trace_id    = "",
+        service     = "",
+        environment = "",
+        soap_op     = "",
+      }
+    }
+
+    // Output estruturado
+    stage.output {
+      source = "message"
+    }
+  }
+
+  // Parse para outros apps (fallback)
+  stage.match {
+    selector = "{app!=\"unifisa-api\"}"
+    
+    stage.regex {
+      expression = "(?P<timestamp>\\S+)\\s+(?P<level>\\S+)\\s+(?P<message>.*)"
+    }
+    
+    stage.labels {
+      values = {
+        level = "",
+      }
+    }
+  }
+}
+
+// =====================================
+// 6. WRITE PARA LOKI
+// =====================================
+
+loki.write "local" {
+  endpoint {
+    url = "http://172.83.238.200:3100/loki/api/v1/push"
+    
+    // Configurações de batching
+    batch_wait = "1s"
+    batch_size = 1048576 // 1MB
+    
+    // Retry
+    max_backoff_period = "5m"
+    max_backoff_retries = 10
+  }
+}
+
+// =====================================
+// 7. OTLP RECEIVER PARA TRACES
+// =====================================
+
+otelcol.receiver.otlp "default" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+
+  output {
+    traces  = [otelcol.processor.batch.default.input]
+    metrics = [otelcol.processor.batch.default.input]
+  }
+}
+
+// =====================================
+// 8. BATCH PROCESSOR PARA TRACES
+// =====================================
+
+otelcol.processor.batch "default" {
+  timeout          = "5s"
+  send_batch_size  = 512
+  send_batch_max_size = 1000
+
+  output {
+    traces  = [otelcol.exporter.otlp.tempo.input]
+    metrics = [otelcol.exporter.prometheus.default.input]
+  }
+}
+
+// =====================================
+// 9. EXPORTER PARA TEMPO (TRACES)
+// =====================================
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "172.83.238.211:4317"
+    
+    tls {
+      insecure = true
+    }
+  }
+}
+
+// =====================================
+// 10. EXPORTER PARA PROMETHEUS (METRICS)
+// =====================================
+
+otelcol.exporter.prometheus "default" {
+  forward_to = [prometheus.remote_write.default.receiver]
+}
+
+prometheus.remote_write "default" {
+  endpoint {
+    url = "http://172.83.238.201:9090/api/v1/write"
+    
+    queue_config {
+      capacity             = 10000
+      max_shards           = 10
+      max_samples_per_send = 5000
+    }
+  }
+}
+
+// =====================================
+// 11. HEALTH CHECK ENDPOINT
+// =====================================
+
+// Alloy expõe automaticamente em :12345/metrics

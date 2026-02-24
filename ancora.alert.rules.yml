@@ -1,0 +1,304 @@
+groups:
+  - name: ancora_autoservico_alerts
+    interval: 30s
+    rules:
+      # API está DOWN
+      - alert: AncoraAutoServicoDown
+        expr: up{job="ancora-autoservico-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: autoservico-api
+          cliente: ancora
+        annotations:
+          summary: "API AutoServico Ancora está DOWN"
+          description: "A API não responde há mais de 2 minutos"
+
+      # Alta taxa de erros 5xx
+      - alert: AncoraAutoServicoHighErrorRate
+        expr: |
+          (
+            sum(rate(http_server_duration_ms_count{job="ancora-autoservico-api",http_response_status_code=~"5.."}[5m]))
+            /
+            sum(rate(http_server_duration_ms_count{job="ancora-autoservico-api"}[5m]))
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: autoservico-api
+          cliente: ancora
+        annotations:
+          summary: "Alta taxa de erros 5xx na API Ancora"
+          description: "{{ $value | humanizePercentage }} de erros nos últimos 5 minutos"
+
+      # Latência muito alta
+      - alert: AncoraAutoServicoHighLatency
+        expr: |
+          (
+            rate(http_server_duration_ms_sum{job="ancora-autoservico-api"}[5m])
+            /
+            rate(http_server_duration_ms_count{job="ancora-autoservico-api"}[5m])
+          ) > 2000
+        for: 5m
+        labels:
+          severity: warning
+          service: autoservico-api
+          cliente: ancora
+        annotations:
+          summary: "Latência alta na API Ancora"
+          description: "Latência média está em {{ $value }}ms"
+
+  - name: gestaocarteira_critical
+    interval: 30s
+    rules:
+      - alert: AplicacaoForaDoAr
+        expr: up{job="gestaocarteira"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          app: gestaocarteira
+        annotations:
+          summary: "🔴 CRÍTICO: GestaoCarteira está OFFLINE"
+          description: "A aplicação não responde há {{ $value }} minutos"
+
+      - alert: TaxaDeErroAlta
+        expr: (sum(rate(http_requests_total{job="gestaocarteira",status=~"5.."}[5m])) / sum(rate(http_requests_total{job="gestaocarteira"}[5m]))) * 100 > 5
+        for: 2m
+        labels:
+          severity: critical
+          app: gestaocarteira
+        annotations:
+          summary: "🔴 Taxa de erro acima de 5%"
+          description: "Taxa de erro em {{ $value }}% nos últimos 5 minutos"
+
+      - alert: LatenciaAltaP95
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="gestaocarteira"}[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          app: gestaocarteira
+        annotations:
+          summary: "⚠️ Latência p95 acima de 2s"
+          description: "Latência p95 em {{ $value }}s"
+
+      - alert: MemoriaJVMAlta
+        expr: (jvm_memory_used_bytes{job="gestaocarteria",area="heap"} / jvm_memory_max_bytes{job="gestaocarteira",area="heap"}) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          app: gestaocarteira
+        annotations:
+          summary: "⚠️ Uso de memória heap acima de 85%"
+          description: "Memória heap em {{ $value }}%"
+
+      - alert: ConexoesBDEsgotadas
+        expr: hikaricp_connections_active{job="gestaocarteira"} >= hikaricp_connections_max{job="gestaocarteira"} * 0.9
+        for: 2m
+        labels:
+          severity: critical
+          app: gestaocarteira
+        annotations:
+          summary: "🔴 Pool de conexões BD quase esgotado"
+          description: "90% das conexões em uso"
+
+      - alert: GCExcessivo
+        expr: rate(jvm_gc_pause_seconds_sum{job="gestaocarteira"}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          app: gestaocarteira
+        annotations:
+          summary: "⚠️ Garbage Collection excessivo"
+          description: "GC consumindo mais de 10% do tempo"
+
+      - alert: QuedaVendas
+        expr: rate(vendas_cotas_total{job="gestaocarteira"}[15m]) < rate(vendas_cotas_total{job="gestaocarteira"}[1h] offset 1h) * 0.5
+        for: 10m
+        labels:
+          severity: warning
+          app: gestaocarteira
+        annotations:
+          summary: "📉 Queda de 50% nas vendas"
+          description: "Vendas caíram significativamente comparado à hora anterior"
+
+  - name: gestaocarteira_critical_alerts
+    interval: 30s
+    rules:
+      # 🔴 CRÍTICO: Aplicação Offline
+      - alert: GestaoCarteiraDown
+        expr: up{job="gestaocarteira"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          app: gestaocarteira
+          team: vendas
+        annotations:
+          summary: "🔴 CRÍTICO: GestaoCarteira OFFLINE"
+          description: "Sistema de vendas de consórcio está fora do ar há {{ $value }} minutos. IMPACTO DIRETO NAS VENDAS!"
+
+      # 🔴 CRÍTICO: Taxa de Erro no Login > 10%
+      - alert: LoginFailureRateCritical
+        expr: |
+          (
+            sum(rate(http_server_request_duration_seconds_count{job="gestaocarteira",http_route="api/login",http_response_status_code="500"}[5m]))
+            /
+            sum(rate(http_server_request_duration_seconds_count{job="gestaocarteira",http_route="api/login"}[5m]))
+          ) * 100 > 10
+        for: 2m
+        labels:
+          severity: critical
+          app: gestaocarteira
+          endpoint: login
+        annotations:
+          summary: "🔴 FALHA MASSIVA DE LOGIN - {{ $value | humanize }}%"
+          description: "Taxa de erro no login em {{ $value | humanize }}%. Usuários NÃO CONSEGUEM ACESSAR O SISTEMA!"
+
+      # ⚠️ WARNING: Latência Login > 2s
+      - alert: LoginLatencyHigh
+        expr: |
+          histogram_quantile(0.95,
+            rate(http_server_request_duration_seconds_bucket{job="gestaocarteira",http_route="api/login"}[5m])
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          app: gestaocarteira
+          endpoint: login
+        annotations:
+          summary: "⚠️ Login MUITO LENTO - p95: {{ $value | humanize }}s"
+          description: "95% dos logins levam mais de {{ $value | humanize }} segundos"
+
+      # 🔴 CRÍTICO: Endpoint Consulta Cota Travado
+      - alert: ConsultaCotaTimeoutCritical
+        expr: |
+          histogram_quantile(0.95,
+            rate(http_server_request_duration_seconds_bucket{job="gestaocarteira",http_route="api/atendimento/consulta-cota"}[5m])
+          ) > 30
+        for: 3m
+        labels:
+          severity: critical
+          app: gestaocarteira
+          endpoint: consulta-cota
+        annotations:
+          summary: "🔴 CONSULTA DE COTA TRAVADA - {{ $value | humanize }}s"
+          description: "Consultas levando {{ $value | humanize }} segundos. TIMEOUT IMINENTE!"
+
+      # 🔴 CRÍTICO: Integração DocuSign Travada
+      - alert: DocuSignIntegrationTimeout
+        expr: |
+          histogram_quantile(0.95,
+            rate(http_server_request_duration_seconds_bucket{job="gestaocarteira",http_route="api/proposta/integracao-docusing"}[5m])
+          ) > 60
+        for: 5m
+        labels:
+          severity: critical
+          app: gestaocarteira
+          endpoint: docusign
+        annotations:
+          summary: "🔴 DOCUSIGN TRAVADO - {{ $value | humanize }}s"
+          description: "Assinaturas digitais demorando {{ $value | humanize }} segundos. VENDAS TRAVADAS!"
+
+      # ⚠️ Taxa de Erro Geral > 5%
+      - alert: OverallErrorRateHigh
+        expr: |
+          (
+            sum(rate(http_server_request_duration_seconds_count{job="gestaocarteira",http_response_status_code=~"5.."}[5m]))
+            /
+            sum(rate(http_server_request_duration_seconds_count{job="gestaocarteira"}[5m]))
+          ) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+          app: gestaocarteira
+        annotations:
+          summary: "⚠️ Taxa de Erro Global: {{ $value | humanize }}%"
+          description: "{{ $value | humanize }}% de todas as requisições estão falhando"
+
+      # 🔴 CRÍTICO: Geração de Boleto Falhando
+      - alert: BoletoGenerationFailing
+        expr: |
+          (
+            sum(rate(http_server_request_duration_seconds_count{job="gestaocarteira",http_route=~"api/boleto/.*",http_response_status_code=~"5.."}[5m]))
+            /
+            sum(rate(http_server_request_duration_seconds_count{job="gestaocarteira",http_route=~"api/boleto/.*"}[5m]))
+          ) * 100 > 10
+        for: 2m
+        labels:
+          severity: critical
+          app: gestaocarteira
+          feature: boleto
+        annotations:
+          summary: "🔴 FALHA NA GERAÇÃO DE BOLETOS - {{ $value | humanize }}%"
+          description: "{{ $value | humanize }}% dos boletos falhando. VENDAS COMPROMETIDAS!"
+
+      # ⚠️ Latência Proposta > 5s
+      - alert: PropostaCreationSlow
+        expr: |
+          histogram_quantile(0.95,
+            rate(http_server_request_duration_seconds_bucket{job="gestaocarteira",http_route="api/proposta",http_request_method="POST"}[5m])
+          ) > 5
+        for: 5m
+        labels:
+          severity: warning
+          app: gestaocarteira
+          endpoint: proposta
+        annotations:
+          summary: "⚠️ Criação de Proposta LENTA - {{ $value | humanize }}s"
+          description: "Propostas levando {{ $value | humanize }} segundos para serem criadas"
+
+      # 🔴 CRÍTICO: Queda no Throughput de Vendas
+      - alert: VendasThroughputDrop
+        expr: |
+          (
+            rate(http_server_request_duration_seconds_count{job="gestaocarteira",http_route="api/proposta",http_request_method="POST"}[15m])
+            <
+            rate(http_server_request_duration_seconds_count{job="gestaocarteira",http_route="api/proposta",http_request_method="POST"}[1h] offset 1h) * 0.5
+          )
+        for: 10m
+        labels:
+          severity: critical
+          app: gestaocarteira
+          business: vendas
+        annotations:
+          summary: "📉 QUEDA DE 50% NAS VENDAS"
+          description: "Throughput de propostas caiu drasticamente comparado à última hora"
+
+      # ⚠️ Endpoint Sem Uso (Possível Problema)
+      - alert: CriticalEndpointNoTraffic
+        expr: |
+          rate(http_server_request_duration_seconds_count{job="gestaocarteira",http_route=~"api/(proposta|login|venda).*"}[10m]) == 0
+        for: 15m
+        labels:
+          severity: warning
+          app: gestaocarteira
+        annotations:
+          summary: "⚠️ Endpoint crítico SEM TRÁFEGO: {{ $labels.http_route }}"
+          description: "Nenhuma requisição em 15 minutos no endpoint {{ $labels.http_route }}"
+
+  - name: gestaocarteira_business_metrics
+    interval: 1m
+    rules:
+      # Taxa de Sucesso de Login
+      - record: gestaocarteira:login:success_rate
+        expr: |
+          (
+            sum(rate(http_server_request_duration_seconds_count{job="gestaocarteira",http_route="api/login",http_response_status_code="200"}[5m]))
+            /
+            sum(rate(http_server_request_duration_seconds_count{job="gestaocarteira",http_route="api/login"}[5m]))
+          ) * 100
+
+      # Taxa de Conversão (Propostas / Consultas)
+      - record: gestaocarteira:vendas:conversion_rate
+        expr: |
+          (
+            sum(rate(http_server_request_duration_seconds_count{job="gestaocarteira",http_route="api/proposta",http_request_method="POST"}[1h]))
+            /
+            sum(rate(http_server_request_duration_seconds_count{job="gestaocarteira",http_route=~"api/venda/.*"}[1h]))
+          ) * 100
+
+      # Latência Média por Endpoint
+      - record: gestaocarteira:endpoint:latency_avg
+        expr: |
+          rate(http_server_request_duration_seconds_sum{job="gestaocarteira"}[5m])
+          /
+          rate(http_server_request_duration_seconds_count{job="gestaocarteira"}[5m])

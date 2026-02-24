@@ -1,0 +1,402 @@
+services:
+  loki:
+    image: grafana/loki:3.5.3
+    container_name: loki
+    restart: unless-stopped
+    mem_limit: 2048M
+    cpus: 0.20
+    networks:
+      - sistemas_net
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - ./loki-data:/tmp/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    environment:
+      - TZ=America/Sao_Paulo
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    restart: unless-stopped
+    mem_limit: 2048M
+    cpus: 0.20    
+    networks:
+      - sistemas_net
+    command:
+      - --web.enable-remote-write-receiver
+      - --config.file=/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./alert.rules.yml:/etc/prometheus/alert.rules.yml
+      - ./ancora.alert.rules.yml:/etc/prometheus/ancora.alert.rules.yml
+    environment:
+      - TZ=America/Sao_Paulo
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:latest
+    container_name: uptime-kuma
+    restart: unless-stopped
+    mem_limit: 1024M
+    cpus: 0.20
+    networks:
+      - sistemas_net
+    ports:
+      - "3001:3001"
+    volumes:
+      - uptime-kuma-data:/app/data
+      # monitora containers docker
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - TZ=America/Sao_Paulo
+
+  prometheus-msteams:
+    image: quay.io/prometheusmsteams/prometheus-msteams:v1.5.2
+    container_name: prometheus-msteams
+    restart: unless-stopped
+    mem_limit: 2048M
+    cpus: 0.20
+    networks:
+      - sistemas_net
+    ports:
+      - "2000:2000"
+    volumes:
+      - ./msteams.yml:/etc/msteams/msteams.yml
+    command:
+      - --config-file=/etc/msteams/msteams.yml  # ADICIONE ESTA LINHA
+    environment:
+      - TZ=America/Sao_Paulo
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    restart: unless-stopped
+    mem_limit: 2048M
+    cpus: 0.20    
+    networks:
+      - sistemas_net-
+    environment:
+      - TZ=America/Sao_Paulo
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_AUTH_BASIC_ENABLED=false
+      - GF_SECURITY_ADMIN_USER=infraestrutura@newm.com.br
+      - GF_SECURITY_ADMIN_PASSWORD=A8qgGYQGCmAhjhhHunYykTNvTgi7pD
+      - GF_SMTP_ENABLED=true
+      - GF_SMTP_HOST=smtp.mailgun.org:587
+      - GF_SMTP_PORT=587
+      - GF_SMTP_USER=sistema@mg.newm.com.br
+      - GF_SMTP_PASSWORD=e(~C|]5%6pm~Vow1xX|N
+      - GF_SMTP_FROM_ADDRESS=sistema@mg.newm.com.br
+      - GF_SMTP_FROM_NAME=Monitoramento NewM Core
+      - GF_SMTP_SKIP_VERIFY=true
+      - GF_SECURITY_COOKIE_SECURE=true
+      - GF_SERVER_ENABLE_GZIP=true
+      - GF_PLUGINS_PREINSTALL=grafana-clock-panel
+      - GF_SMTP_USE_TLS=true
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=https://grafana.newm.dev.br/
+    ports:
+      - 3000:3000/tcp
+    volumes:
+      - grafana-storage:/var/lib/grafana
+    entrypoint:
+      - sh
+      - -euc
+      - |
+        mkdir -p /etc/grafana/provisioning/datasources
+        cat <<EOF > /etc/grafana/provisioning/datasources/ds.yaml
+        apiVersion: 2
+        datasources:
+        - name: Loki
+          type: loki
+          access: proxy
+          orgId: 1
+          url: http://loki:3100
+          basicAuth: false
+          isDefault: false
+          version: 1
+          editable: false
+        - name: Prometheus
+          type: prometheus
+          orgId: 1
+          url: http://prometheus:9090
+          basicAuth: false
+          isDefault: true
+          version: 1
+          editable: false
+        - name: Tempo
+          type: tempo
+          access: proxy
+          orgId: 1
+          url: http://tempo:3200
+          basicAuth: false
+          isDefault: false
+          version: 1
+          editable: false
+          jsonData:
+            tracesToLogs:
+              datasourceUid: 'loki'
+              tags: ['job', 'instance', 'pod', 'namespace']
+              mappedTags: [{ key: 'service.name', value: 'service' }]
+              mapTagNamesEnabled: false
+              spanStartTimeShift: '1h'
+              spanEndTimeShift: '1h'
+              filterByTraceID: false
+              filterBySpanID: false
+            tracesToMetrics:
+              datasourceUid: 'prometheus'
+              tags: [{ key: 'service.name', value: 'service' }, { key: 'job' }]
+              queries:
+                - name: 'Sample query'
+                  query: 'sum(rate(traces_spanmetrics_latency_bucket{$$__tags}[5m]))'
+            serviceMap:
+              datasourceUid: 'prometheus'
+            search:
+              hide: false
+            nodeGraph:
+              enabled: true
+        - name: banco-cliente
+          type: psql
+          orgId: 1
+          url: 172.81.238.57:5432
+          database: unifisa
+          user: ${SQL_USER_CLIENTE}
+          secureJsonData:
+            password: ${SQL_PASSWORD_CLIENTE}
+          basicAuth: false
+          isDefault: false
+          version: 1
+          editable: false
+        EOF
+        /run.sh
+
+  alloy:
+    image: grafana/alloy:v1.9.2
+    container_name: alloy
+    restart: unless-stopped
+    mem_limit: 2048M
+    cpus: "0.20"
+    networks:
+      - sistemas_net
+    ports:
+      - 12345:12345
+      - 4317:4317
+      - 4318:4318
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - alloy-data:/var/lib/alloy/data
+    command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+    environment:
+      - TZ=America/Sao_Paulo
+
+  node-exporter:
+    image: prom/node-exporter
+    networks:
+      - sistemas_net
+    container_name: node-exporter
+    restart: unless-stopped
+    mem_limit: 2048M
+    cpus: "0.20"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+      - /run/systemd:/run/systemd:ro
+      - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --collector.systemd
+      - --collector.tcpstat
+      - --collector.processes
+    ports:
+      - "9100:9100"
+    environment:
+      - TZ=America/Sao_Paulo
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    restart: unless-stopped
+    mem_limit: 2048M
+    cpus: "0.20"
+    networks:
+      - sistemas_net
+    ports:
+      - "9393:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    privileged: true
+    command:
+      - '--housekeeping_interval=120s'
+      - '--max_housekeeping_interval=120s'
+      - '--logtostderr'
+      - '-v=1'
+      - '--docker_only=true'  
+    environment:
+      - TZ=America/Sao_Paulo
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    restart: unless-stopped
+    mem_limit: 2048M
+    cpus: "0.20"
+    networks:
+      - sistemas_net
+    ports:
+      - "9093:9093"
+    command:
+      - '--config.file=/etc/alertmanager/config.yml'
+      - '--cluster.advertise-address=172.83.238.206:9094'
+      - '--cluster.listen-address=172.83.238.206:9094'
+    volumes:
+      - ./alertmanager-config.yml:/etc/alertmanager/config.yml
+      - ./templates/alert-templates.tmpl:/etc/alertmanager/templates/alert-templates.tmpl
+    environment:
+      - TZ=America/Sao_Paulo
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter
+    container_name: blackbox-exporter
+    restart: unless-stopped
+    mem_limit: 2048M
+    cpus: "0.20"
+    networks:
+      - sistemas_net
+    ports:
+      - "9115:9115"
+    command:
+      - '--config.file=/etc/blackbox_exporter/config.yml'
+    cap_add:
+      - NET_RAW
+    volumes:
+      - ./blackbox.yml:/etc/blackbox_exporter/config.yml
+    environment:
+      - TZ=America/Sao_Paulo
+
+  process-exporter:
+    image: ncabatoff/process-exporter:0.7.10
+    container_name: process-exporter
+    restart: unless-stopped
+    mem_limit: 2048M
+    cpus: "0.50"
+    pid: host
+    networks: 
+      - sistemas_net
+    ports:
+      - "9256:9256"
+    volumes:
+      - /proc:/host/proc:ro
+      - ./process-exporter.yml:/config.yml:ro
+    command: --procfs /host/proc --config.path /config.yml
+
+  tempo:
+    image: grafana/tempo:latest
+    container_name: tempo
+    restart: unless-stopped
+    mem_limit: 2048M
+    cpus: "0.30"
+    networks:
+      - sistemas_net
+    ports:
+      - "3200:3200"   # HTTP
+      - "14268:14268" # Jaeger ingest
+    volumes:
+      - ./tempo-config.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    command: 
+      - -config.file=/etc/tempo/tempo.yaml
+    environment:
+      - TZ=America/Sao_Paulo
+
+  log-collector-ancora:
+    image: python:3.11-slim
+    container_name: log-collector-ancora
+    restart: unless-stopped
+    mem_limit: 512M
+    cpus: "0.20"
+    networks:
+      - sistemas_net
+    environment:
+      - TZ=America/Sao_Paulo
+      - API_BASE_URL=https://aa.ancoraconsorcios.com.br/Simple.AutoServico/AutoServico.Api
+      - LOKI_URL=http://172.81.240.200:3100/loki/api/v1/push
+      - POLL_INTERVAL=60
+      # GUIDs para monitorar (separados por vírgula)
+      - KNOWN_GUIDS=
+      # Autenticação (escolha uma opção):
+      # Opção 1: Token Bearer
+      # - API_TOKEN=seu_token_aqui
+      # Opção 2: Basic Auth
+      # - API_USERNAME=usuario
+      # - API_PASSWORD=senha
+    volumes:
+      - ./log-collector/log-collector.py:/app/log-collector.py:ro
+    working_dir: /app
+    command: >
+      sh -c "pip install --no-cache-dir requests urllib3 &&
+             python -u log-collector.py"
+
+  wireguard-server-exporter:
+    image: mindflavor/prometheus-wireguard-exporter
+    container_name: wireguard-server-exporter
+    restart: unless-stopped
+    mem_limit: 512M
+    cpus: "0.20"
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - PROMETHEUS_WIREGUARD_EXPORTER_LISTEN_PORT=9586
+      - TZ=America/Sao_Paulo
+    command: ["-a", "true", "-n", "/etc/wireguard/wg0.conf"]
+    volumes:
+      - /opt/scripts/wireguard_server/etc_wireguard:/etc/wireguard:ro
+    networks:
+      - sistemas_net
+    ports:
+      - "9586:9586"
+
+  wireguard-client-exporter:
+    image: mindflavor/prometheus-wireguard-exporter
+    container_name: wireguard-client-exporter
+    restart: unless-stopped
+    mem_limit: 512M
+    cpus: "0.20"
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - PROMETHEUS_WIREGUARD_EXPORTER_LISTEN_PORT=9587
+      - TZ=America/Sao_Paulo
+    command: ["-a", "true"]
+    network_mode: "container:wireguard_client_poseidon_hades"
+    volumes:
+      - /opt/scripts/wireguard_client:/config:ro
+    networks:
+      - sistemas_net
+    ports:
+      - "9587:9587"
+
+networks:
+  sistemas_net:
+    external: true
+    name: sistemas_net
+
+volumes:
+  grafana-storage:
+  loki-data:
+  alloy-data:
+  tempo-data:
+  uptime-kuma-data:

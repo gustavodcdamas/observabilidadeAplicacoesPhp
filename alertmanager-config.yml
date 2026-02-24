@@ -1,0 +1,247 @@
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: 'smtp.mailgun.org:587'
+  smtp_from: ''
+  smtp_auth_username: ''
+  smtp_auth_password: ''
+
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+time_intervals:
+  - name: api-daily-windows
+    time_intervals:
+      - times:
+          - start_time: "08:00"
+            end_time: "08:10"
+          - start_time: "13:00"
+            end_time: "13:10"
+          - start_time: "18:00"
+            end_time: "18:10"
+        weekdays: ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
+        location: "America/Sao_Paulo"
+
+route:
+  group_by: ['alertname', 'severity', 'category']
+  group_wait: 10s
+  group_interval: 5m
+  repeat_interval: 1h
+  receiver: 'email-all'
+  routes:
+    - match:
+        category: api_daily
+      receiver: 'api-daily-report'
+      group_by: ['alertname','severity','category','instance']
+      active_time_intervals: ['api-daily-windows']
+      group_wait: 120s
+      group_interval: 5m
+      repeat_interval: 5h
+
+    - match:
+        category: api
+        severity: critical
+      receiver: 'api-critical'
+
+    - match:
+        category: server
+        severity: warning
+      receiver: 'server-warning'
+
+    - match:
+        category: server
+        severity: critical
+      receiver: 'server-critical'
+
+    - match_re:
+        category: (container|infrastructure|database)
+        severity: critical
+      receiver: 'application-critical'
+
+    - match:
+        category: ssl
+      receiver: 'ssl-alerts'
+
+    - match:
+        cliente: ancora
+        business: vendas
+      receiver: 'ancora-alerts'
+      group_by: ['alertname', 'severity', 'app']
+      group_wait: 10s
+      group_interval: 5m
+      repeat_interval: 1h
+
+receivers:
+  - name: 'email-all'
+    email_configs:
+      - to: 'gustavodcdamas@gmail.com'
+        from: 'monitoramento@gustavodcdamas.com.br'
+        smarthost: 'smtp.mailgun.org:587'
+        auth_username: ''
+        auth_identity: ''
+        auth_password: ''
+        headers:
+          Subject: '{{ template "email.subject" . }}'
+        html: '{{ template "email.html" . }}'
+
+  - name: 'api-daily-report'
+    email_configs:
+      - to: 'gustavodcdamas@gmail.com'
+        from: 'monitoramento@gustavodcdamas.com.br'
+        smarthost: 'smtp.mailgun.org:587'
+        auth_username: ''
+        auth_identity: ''
+        auth_password: ''
+        headers:
+          Subject: '{{ template "email.subject" . }}'
+        html: '{{ template "email.html" . }}'
+    webhook_configs:
+      - url: 'http://msteams:2000/teams-api'
+        send_resolved: false
+    telegram_configs:
+      - bot_token: ''
+        chat_id: -1002614750965
+        message_thread_id: 3
+        parse_mode: 'HTML'
+        message: '{{ template "telegram.message" . }}'
+
+  - name: 'api-critical'
+    email_configs:
+      - to: 'gustavodcdamas@gmail.com'
+        from: 'monitoramento@gustavodcdamas.com.br'
+        smarthost: 'smtp.mailgun.org:587'
+        auth_username: ''
+        auth_identity: ''
+        auth_password: ''
+        headers:
+          Subject: '{{ template "email.subject" . }}'
+        html: '{{ template "email.html" . }}'
+    webhook_configs:
+      - url: 'http://msteams:2000/teams-api'
+        send_resolved: true
+    telegram_configs:
+      - bot_token: ''
+        chat_id: -1002614750965
+        message_thread_id: 7
+        parse_mode: 'HTML'
+        message: '{{ template "telegram.message" . }}'
+
+  - name: 'server-warning'
+    email_configs:
+      - to: 'gustavodcdamas@gmail.com'
+        from: 'monitoramento@gustavodcdamas.com.br'
+        smarthost: 'smtp.mailgun.org:587'
+        auth_username: ''
+        auth_identity: ''
+        auth_password: ''
+        headers:
+          Subject: '{{ template "email.subject" . }}'
+        html: '{{ template "email.html" . }}'
+    webhook_configs:
+      - url: 'http://msteams:2000/teams-server'
+        send_resolved: true
+
+  - name: 'server-critical'
+    email_configs:
+      - to: 'gustavodcdamas@gmail.com'
+        from: 'monitoramento@gustavodcdamas.com.br'
+        smarthost: 'smtp.mailgun.org:587'
+        auth_username: ''
+        auth_identity: ''
+        auth_password: ''
+        headers:
+          Subject: '{{ template "email.subject" . }}'
+        html: '{{ template "email.html" . }}'
+    webhook_configs:
+      - url: 'http://msteams:2000/teams-server'
+        send_resolved: true
+    telegram_configs:
+      - bot_token: ''
+        chat_id: -1002614750965
+        message_thread_id: 11
+        parse_mode: 'HTML'
+        message: '{{ template "telegram.message" . }}'
+
+  - name: 'container-warning'
+    email_configs:
+      - to: 'gustavodcdamas@gmail.com'
+        from: 'monitoramento@gustavodcdamas.com.br'
+        smarthost: 'smtp.mailgun.org:587'
+        auth_username: ''
+        auth_identity: ''
+        auth_password: ''
+        headers:
+          Subject: '{{ template "email.subject" . }}'
+        html: '{{ template "email.html" . }}'
+    webhook_configs:
+      - url: 'http://msteams:2000/teams-aplicacao'
+        send_resolved: true
+
+  - name: 'application-critical'
+    email_configs:
+      - to: 'gustavodcdamas@gmail.com'
+        from: 'monitoramento@gustavodcdamas.com.br'
+        smarthost: 'smtp.mailgun.org:587'
+        auth_username: ''
+        auth_identity: ''
+        auth_password: ''
+        headers:
+          Subject: '{{ template "email.subject" . }}'
+        html: '{{ template "email.html" . }}'
+    webhook_configs:
+      - url: 'http://msteams:2000/teams-aplicacao'
+        send_resolved: true
+    telegram_configs:
+      - bot_token: ''
+        chat_id: -1002614750965
+        message_thread_id: 7
+        parse_mode: 'HTML'
+        message: '{{ template "telegram.message" . }}'
+
+  - name: 'ssl-alerts'
+    email_configs:
+      - to: 'gustavodcdamas@gmail.com'
+        from: 'monitoramento@gustavodcdamas.com.br'
+        smarthost: 'smtp.mailgun.org:587'
+        auth_username: ''
+        auth_identity: ''
+        auth_password: ''
+        headers:
+          Subject: '{{ template "email.subject" . }}'
+        html: '{{ template "email.html" . }}'
+    webhook_configs:
+      - url: 'http://msteams:2000/teams-ssl'
+        send_resolved: true
+    telegram_configs:
+      - bot_token: ''
+        chat_id: -1002614750965
+        message_thread_id: 8
+        parse_mode: 'HTML'
+        message: '{{ template "telegram.message" . }}'
+
+  - name: 'ancora-alerts'
+    email_configs:
+      - to: 'gustavodcdamas@gmail.com'
+        from: 'monitoramento@gustavodcdamas.com.br'
+        smarthost: 'smtp.mailgun.org:587'
+        auth_username: ''
+        auth_identity: ''
+        auth_password: ''
+        headers:
+          Subject: '{{ template "email.subject" . }}'
+        html: '{{ template "email.html" . }}'
+    webhook_configs:
+      - url: 'http://msteams:2000/teams-ancora'
+        send_resolved: true
+    telegram_configs:
+      - bot_token: ''
+        chat_id: -1002614750965
+        message_thread_id: 29900
+        parse_mode: 'HTML'
+        message: '{{ template "telegram.message" . }}'
+
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']

@@ -1,0 +1,6 @@
+connectors:
+  - teams-server: https://webhook.office.com/webhookb2/a1e063e5-cce0-4dcb-9eb3-d0eba4c5be1c@
+  - teams-aplicacao: https://webhook.office.com/webhookb2/a1e063e5-cce0-4dcb-9eb3-d0eba4c5be1c@
+  - teams-ssl: https://webhook.office.com/webhookb2/a1e063e5-cce0-4dcb-9eb3-d0eba4c5be1c@
+  - teams-api: https://webhook.office.com/webhookb2/a1e063e5-cce0-4dcb-9eb3-d0eba4c5be1c@
+  - teams-ancora: https://environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/

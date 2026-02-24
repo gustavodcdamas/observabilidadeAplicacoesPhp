@@ -1,0 +1,132 @@
+global:
+  scrape_interval: 60s
+  scrape_timeout: 20s
+  evaluation_interval: 60s
+
+alerting:
+  alertmanagers:
+    - scheme: http
+      timeout: 10s
+      api_version: v2
+      static_configs:
+        - targets:
+            - alertmanager:9093
+
+scrape_configs:
+  - job_name: node-exporter
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - node-exporter:9100
+
+  - job_name: alertmanager
+    static_configs:
+      - targets:
+          - alertmanager:9093
+
+  - job_name: cadvisor
+    metrics_path: /metrics
+    scrape_interval: 60s
+    static_configs:
+      - targets:
+          - cadvisor:8080
+
+  - job_name: loki
+    static_configs:
+      - targets:
+          - loki:3100
+
+  - job_name: alloy
+    static_configs:
+      - targets:
+          - alloy:12345
+
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - prometheus:9090
+
+  # API AutoServico - Ancora Consórcios
+  # ========================================
+  - job_name: 'ancora-autoservico-api'
+    scrape_interval: 60s
+    scrape_timeout: 10s
+    metrics_path: '/Simple.AutoServico/AutoServico.Api/metrics'
+    scheme: https
+    static_configs:
+      - targets: ['aa.ancoraconsorcios.com.br']
+        labels:
+          app: 'autoservico-api'
+          cliente: 'ancora'
+          environment: 'production'
+    # Caso tenha problemas com SSL
+    tls_config:
+      insecure_skip_verify: true
+
+  # NewCon Ancora - Gestão Carteira - Vendas
+  - job_name: 'blackbox-newcon-ancora-gestao-carteira-vendas'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+        - https://gestaocarteira.ancoraconsorcios.com.br/newcon.mobile.venda/NWSRVMB_Venda.asmx
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: newcon_ancora-gestao-carteira-vendas_health_get
+    metrics_path: /probe
+    params:
+      module: [soap_newcon_get]
+    static_configs:
+      - targets:
+        - https://hmlmobile.unifisa.com.br/homologacao/Newcon.Enterprise.Mobile.Venda/NWSRVMB_Venda.asmx
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+    scrape_interval: 60s
+
+  - job_name: newcon_ancora-gestao-carteira-vendas_health_post
+    metrics_path: /probe
+    params:
+      module: [soap_newcon_post]
+    static_configs:
+      - targets:
+        - https://hmlmobile.unifisa.com.br/homologacao/Newcon.Enterprise.Mobile.Venda/NWSRVMB_Venda.asmx
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+    scrape_interval: 60s
+
+  - job_name: 'gestaocarteira'
+    scrape_interval: 60s
+    scrape_timeout: 10s
+    metrics_path: '/Simple/GestaoCarteira/metrics'
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+    static_configs:
+      - targets: ['gestaocarteira.ancoraconsorcios.com.br']
+        labels:
+          environment: 'production'
+          app: 'gestaocarteira'
+          criticality: 'high'
+          team: 'vendas'
+
+rule_files:
+  - /etc/prometheus/alert.rules.yml
+  - /etc/prometheus/unifisa.alert.rules.yml
+  - /etc/prometheus/ancora.alert.rules.yml
